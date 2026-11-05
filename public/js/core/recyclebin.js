@@ -14,16 +14,22 @@ export function fromFiletime(ft) {
   return new Date(Number(BigInt(ft) / 10000n - EPOCH_GAP_SECONDS * 1000n));
 }
 
-/** Build a 544-byte version-1 $I file (Vista – 8.1 layout from the slides). */
-export function buildIFile({ path, size, deletedAt }) {
+/**
+ * Build a $I file. Version 1 (Vista – 8.1) is a fixed 544 bytes; version 2 (Windows 10+)
+ * adds a 4-byte name length at offset 24 and is only as long as the path needs.
+ */
+export function buildIFile({ path, size, deletedAt, version = 1 }) {
   if (!path) throw new Error('Original path required');
   if (path.length >= MAX_PATH) throw new Error(`Path longer than ${MAX_PATH - 1} characters`);
-  const buf = new Uint8Array(I_FILE_SIZE);
+  if (version !== 1 && version !== 2) throw new Error(`Unsupported $I version ${version}`);
+  const pathStart = version === 2 ? 28 : 24;
+  const buf = new Uint8Array(version === 2 ? pathStart + (path.length + 1) * 2 : I_FILE_SIZE);
   const dv = new DataView(buf.buffer);
-  dv.setBigUint64(0, 1n, true); // header: 01 00 00 00 00 00 00 00
+  dv.setBigUint64(0, BigInt(version), true); // header: 01 (or 02) 00 00 00 00 00 00 00
   dv.setBigUint64(8, BigInt(size), true);
   dv.setBigUint64(16, toFiletime(deletedAt), true);
-  for (let i = 0; i < path.length; i++) dv.setUint16(24 + i * 2, path.charCodeAt(i), true);
+  if (version === 2) dv.setUint32(24, path.length + 1, true); // includes the terminating NUL
+  for (let i = 0; i < path.length; i++) dv.setUint16(pathStart + i * 2, path.charCodeAt(i), true);
   return buf;
 }
 

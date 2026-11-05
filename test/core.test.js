@@ -82,6 +82,18 @@ test('$I version 2 parses', () => {
   assert.equal(p.size, 77n);
 });
 
+test('buildIFile version 2 round-trips and matches the hand-built layout', () => {
+  const deletedAt = new Date('2025-01-01T00:00:00Z');
+  const b = buildIFile({ path: 'C:\\a.txt', size: 77, deletedAt, version: 2 });
+  assert.equal(b.length, 28 + 9 * 2);
+  const p = parseIFile(b);
+  assert.equal(p.version, 2);
+  assert.equal(p.path, 'C:\\a.txt');
+  assert.equal(p.size, 77n);
+  assert.equal(p.deletedAt.getTime(), deletedAt.getTime());
+  assert.throws(() => buildIFile({ path: 'C:\\a', size: 1, deletedAt, version: 3 }), /Unsupported/);
+});
+
 test('XP INFO2 and Vista names', () => {
   assert.equal(info2Name('C:\\docs\\plan.doc', 4), 'Dc4.doc');
   assert.equal(info2Name('D:\\folder', 1), 'Dd1');

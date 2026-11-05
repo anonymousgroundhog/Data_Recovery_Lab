@@ -19,6 +19,43 @@ export default {
     const fileIn = h('input', { type: 'file' });
     const parseOut = h('div');
     const quizEl = h('div');
+    const sampleInfo = h('div');
+
+    // Students without Windows (or with an empty Recycle Bin) have no real $I file to open,
+    // so the lab can generate realistic ones in the browser and save them to disk.
+    const SAMPLE_PATHS = [
+      'C:\\Users\\alice\\Documents\\Q3_report.docx',
+      'C:\\Users\\bob\\Pictures\\IMG_2041.jpg',
+      'D:\\Projects\\budget_2025.xlsx',
+      'C:\\Users\\carol\\Desktop\\passwords.txt',
+      'C:\\Users\\dave\\Downloads\\setup_v2.exe',
+      'E:\\Evidence\\case-0142\\notes.pdf',
+    ];
+
+    function download(bytes, name) {
+      const url = URL.createObjectURL(new Blob([bytes], { type: 'application/octet-stream' }));
+      const a = h('a', { href: url, download: name });
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function loadSample(version) {
+      const path = r.pick(SAMPLE_PATHS);
+      const size = r.int(512, 8 * 1024 * 1024);
+      const deletedAt = new Date(Date.now() - r.int(1, 90 * 24 * 60) * 60000);
+      deletedAt.setSeconds(0, 0);
+      const bytes = buildIFile({ path, size, deletedAt, version });
+      const name = vistaNames(path, r).i;
+      hexIn.value = hexBytes(bytes);
+      decode();
+      clear(sampleInfo, note('info',
+        `Loaded sample `, h('code', null, name), ` (version ${version}, ${bytes.length} bytes${version === 2 ? ', Windows 10+ layout' : ''}). `,
+        'Try decoding the size and time by hand first, or ',
+        btn('save it as a file', () => download(bytes, name), 'sm'),
+        ' and open it with the file picker like a real one.'));
+    }
 
     function build() {
       try {
@@ -33,7 +70,9 @@ export default {
           h('h3', null, 'Little-endian, step by step'),
           h('p', { class: 'small' }, `Size ${Number(sizeIn.value).toLocaleString('en-US')} = 0x${Number(sizeIn.value).toString(16).toUpperCase().padStart(16, '0')} → reverse the bytes → `, h('code', null, hexBytes(sz))),
           h('p', { class: 'small' }, `Time = (ms since 1970 + 11,644,473,600,000 ms) × 10,000 = ${toFiletime(deletedAt)} → `, h('code', null, hexBytes(leBytes(toFiletime(deletedAt))))),
-          btn('Copy hex to the decoder →', () => { hexIn.value = hexBytes(bytes); decode(); }, 'sm'));
+          h('div', { class: 'row' },
+            btn('Copy hex to the decoder →', () => { hexIn.value = hexBytes(bytes); clear(sampleInfo); decode(); }, 'sm'),
+            btn(`Download ${names.i}`, () => download(bytes, names.i), 'sm')));
       } catch (e) {
         clear(out, note('bad', e.message));
       }
@@ -51,6 +90,7 @@ export default {
       const f = fileIn.files[0];
       if (!f) return;
       const bytes = new Uint8Array(await f.arrayBuffer());
+      clear(sampleInfo);
       hexIn.value = hexBytes(bytes);
       decode();
     });
@@ -81,6 +121,17 @@ export default {
         panel('Decode a $I file',
           h('p', { class: 'small muted' }, 'Paste hex from a hex editor, or open a real $I file copied out of $Recycle.Bin (it is read locally – nothing is uploaded).'),
           hexIn, h('div', { class: 'row', style: { marginTop: '8px' } }, btn('Decode', decode, 'primary'), fileIn),
+          h('div', { class: 'row', style: { marginTop: '8px' } },
+            h('span', { class: 'small muted' }, 'No $I file?'),
+            btn('Sample: Vista – 8.1 (v1)', () => loadSample(1), 'sm'),
+            btn('Sample: Windows 10+ (v2)', () => loadSample(2), 'sm')),
+          h('details', { class: 'small muted', style: { marginTop: '6px' } },
+            h('summary', null, 'Where to get a real one'),
+            h('p', null, 'On Windows: delete any file to the Recycle Bin, open Command Prompt and run ',
+              h('code', null, 'dir /a C:\\$Recycle.Bin'), ' then ', h('code', null, 'dir /a C:\\$Recycle.Bin\\<your SID>'),
+              '. Copy the ', h('code', null, '$I…'), ' file out with ', h('code', null, 'copy "C:\\$Recycle.Bin\\<SID>\\$IABC123.docx" %USERPROFILE%\\Desktop'),
+              '. No Windows machine? Use the sample buttons above or the Download button in “Build a $I file”.')),
+          sampleInfo,
           parseOut)),
       panel('Windows 2000 / XP: name the file in RECYCLER',
         h('p', { class: 'small' }, 'XP renames recycled items to ', h('code', null, 'D%DriveLetter%%IndexNumber%.%FileExtension%'), '. The index is the order of deletion; folders get no extension. The hidden ', h('code', null, 'INFO2'), ' file keeps the original path, size and deletion time for each index.'),
